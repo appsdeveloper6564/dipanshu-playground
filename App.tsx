@@ -4,11 +4,23 @@ import {
   Send, Settings2, Upload, Mic, Globe, Code, Download, Loader2, X, Image as ImageIcon,
   Terminal, Plus, MessageSquare, LogOut, Settings, Copy, Check, Play, Maximize2,
   MicOff, Sparkles, LayoutGrid, Video, Info, Trash2, Eye, EyeOff, ShieldCheck, Braces, 
-  ChevronRight, FileCode, Ghost, ExternalLink, ArrowLeft, Zap
+  ChevronRight, FileCode, Ghost, ExternalLink, ArrowLeft, Zap, Layers
 } from 'lucide-react';
 import { ChatSession, ChatMessage, ModelType, MediaFile, SafetySetting } from './types';
 import { DEFAULT_SYSTEM_INSTRUCTION, MODELS, SAFETY_THRESHOLDS } from './constants';
 import { generateAIContent, generateVideoContent } from './services/geminiService';
+
+// Fixed Window interface declaration with correct AIStudio type
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
+  interface Window {
+    aistudio: AIStudio;
+  }
+}
 
 const CodeBlock: React.FC<{ code: string; language?: string }> = ({ code, language }) => {
   const [copied, setCopied] = useState(false);
@@ -98,9 +110,15 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setSessions(parsed);
-        if (parsed.length > 0) setActiveSessionId(parsed[0].id);
-      } catch (e) { createNewSession(); }
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSessions(parsed);
+          setActiveSessionId(parsed[0].id);
+        } else {
+          createNewSession();
+        }
+      } catch (e) { 
+        createNewSession(); 
+      }
     } else {
       createNewSession();
     }
@@ -130,10 +148,10 @@ const App: React.FC = () => {
   const activeSession = useMemo(() => sessions.find(s => s.id === activeSessionId), [sessions, activeSessionId]);
 
   const previewCode = useMemo(() => {
-    if (!activeSession) return '';
+    if (!activeSession?.messages) return '';
     for (let i = activeSession.messages.length - 1; i >= 0; i--) {
       const msg = activeSession.messages[i];
-      if (msg.role === 'model') {
+      if (msg.role === 'model' && msg.parts) {
         for (const part of msg.parts) {
           if (part.text) {
             const codeMatch = part.text.match(/```(?:html|xml|javascript|jsx|tsx|svg|css)\n([\s\S]*?)```/);
@@ -147,16 +165,16 @@ const App: React.FC = () => {
 
   const detectedVariables = useMemo(() => {
     if (!activeSession) return [];
-    const text = activeSession.systemInstruction + (inputText || '');
+    const text = (activeSession.systemInstruction || '') + (inputText || '');
     const matches = text.match(/{{(.*?)}}/g);
     if (!matches) return [];
     return Array.from(new Set(matches.map(m => m.replace(/{{|}}/g, ''))));
   }, [activeSession, inputText]);
 
-  // Fix: Added missing generateExportCode function
   const generateExportCode = (lang: string) => {
-    const model = activeSession?.config.model || 'gemini-3-flash-preview';
-    const systemInstruction = activeSession?.systemInstruction || '';
+    if (!activeSession) return '';
+    const model = activeSession.config?.model || 'gemini-3-flash-preview';
+    const systemInstruction = activeSession.systemInstruction || '';
     
     if (lang === 'python') {
       return `import google.generativeai as genai
@@ -204,7 +222,6 @@ console.log(response.text);`;
     return '';
   };
 
-  // Fix: Added missing renderAdsHub function
   const renderAdsHub = () => (
     <div className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-[#0B0C10]">
       <div className="max-w-4xl mx-auto space-y-12">
@@ -215,7 +232,7 @@ console.log(response.text);`;
             </div>
             <div>
               <h2 className="text-2xl font-black text-white tracking-tight uppercase">Ads Hub</h2>
-              <p className="text-sm text-gray-500">Manage promotional segments and external links.</p>
+              <p className="text-sm text-gray-500">Promotional segments and studio insights.</p>
             </div>
           </div>
           <button 
@@ -230,10 +247,6 @@ console.log(response.text);`;
           <AdUnit id="ad-unit-1" width={300} height={250} />
           <AdUnit id="ad-unit-2" width={300} height={250} />
           <AdUnit id="ad-unit-top" width={728} height={90} />
-          <div className="p-8 border border-dashed border-[#45A29E]/20 rounded-2xl flex flex-col items-center justify-center text-center gap-4 bg-[#1F2833]/10">
-            <Info className="text-[#45A29E]" size={32} />
-            <p className="text-sm font-medium text-gray-500">Ad inventory loading...</p>
-          </div>
         </div>
       </div>
     </div>
@@ -272,20 +285,15 @@ console.log(response.text);`;
     if (!inputText.trim() && attachedFiles.length === 0) return;
     if (!activeSession) return;
 
-    // Handle mandatory API Key selection for specific models as per guidelines
-    const isVeoModel = activeSession.config.model === ModelType.VEO_VIDEO;
-    const isGeminiProImage = activeSession.config.model === ModelType.GEMINI_IMAGE_PRO;
+    // API Key selection logic for Veo and Imagen Pro
+    const isVeoModel = activeSession.config?.model === ModelType.VEO_VIDEO;
+    const isGeminiProImage = activeSession.config?.model === ModelType.GEMINI_IMAGE_PRO;
     
     if (isVeoModel || isGeminiProImage) {
       if (typeof window.aistudio?.hasSelectedApiKey === 'function') {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         if (!hasKey) {
-          if (typeof window.aistudio?.openSelectKey === 'function') {
-            await window.aistudio.openSelectKey();
-          } else {
-            alert("This model requires selecting an API key from a paid GCP project.");
-            return;
-          }
+          await window.aistudio.openSelectKey();
         }
       }
     }
@@ -302,12 +310,14 @@ console.log(response.text);`;
       timestamp: Date.now()
     };
 
-    const updatedMessages = [...activeSession.messages, userMessage];
-    setSessions(prev => prev.map(s => s.id === activeSession.id ? {
+    const updatedMessages = [...(activeSession.messages || []), userMessage];
+    const targetId = activeSession.id;
+
+    setSessions(prev => prev.map(s => s.id === targetId ? {
       ...s,
       messages: updatedMessages,
       lastModified: Date.now(),
-      title: activeSession.messages.length === 0 ? (inputText.slice(0, 30) || "Visual Analysis") : s.title
+      title: (s.messages?.length === 0) ? (inputText.slice(0, 30) || "Visual Analysis") : s.title
     } : s));
 
     setInputText('');
@@ -324,7 +334,7 @@ console.log(response.text);`;
           timestamp: Date.now(),
           videoUrl: url
         };
-        setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, messages: [...s.messages, modelMessage] } : s));
+        setSessions(prev => prev.map(s => s.id === targetId ? { ...s, messages: [...(s.messages || []), modelMessage] } : s));
       } else {
         const response = await generateAIContent(
           activeSession.config.model,
@@ -341,18 +351,18 @@ console.log(response.text);`;
             ...(response.text ? [{ text: response.text }] : []),
             ...(response.imagePart ? [response.imagePart] : [])
           ],
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          groundingMetadata: response.groundingMetadata
         };
 
-        setSessions(prev => prev.map(s => s.id === activeSession.id ? {
+        setSessions(prev => prev.map(s => s.id === targetId ? {
           ...s,
-          messages: [...s.messages, modelMessage],
+          messages: [...(s.messages || []), modelMessage],
           lastModified: Date.now()
         } : s));
       }
     } catch (e: any) { 
-      console.error("Gemini Error:", e);
-      // Reset key selection if entity was not found as per guidelines
+      console.error("Generation failed:", e);
       if (e.message?.includes("Requested entity was not found") && typeof window.aistudio?.openSelectKey === 'function') {
         await window.aistudio.openSelectKey();
       }
@@ -361,7 +371,7 @@ console.log(response.text);`;
   };
 
   const updateConfig = (key: string, value: any) => {
-    if (!activeSession) return;
+    if (!activeSessionId) return;
     setSessions(prev => prev.map(s => s.id === activeSessionId ? {
       ...s,
       config: { ...s.config, [key]: value }
@@ -369,11 +379,22 @@ console.log(response.text);`;
   };
 
   const updateVariable = (key: string, value: string) => {
-    if (!activeSession) return;
+    if (!activeSessionId) return;
     setSessions(prev => prev.map(s => s.id === activeSessionId ? {
       ...s,
       variables: { ...s.variables, [key]: value }
     } : s));
+  };
+
+  const deleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSessions(prev => {
+      const filtered = prev.filter(s => s.id !== id);
+      if (activeSessionId === id) {
+        setActiveSessionId(filtered.length > 0 ? filtered[0].id : null);
+      }
+      return filtered;
+    });
   };
 
   const renderMessageContent = (text: string) => {
@@ -404,13 +425,14 @@ console.log(response.text);`;
       </div>
       <div className="space-y-3 relative z-10">
         <h3 className="text-3xl font-extrabold text-white tracking-tight">AI Playground</h3>
-        <p className="text-[#45A29E] max-w-sm text-lg font-medium">Ready for engineering. Enter a prompt or upload an image to start building.</p>
-        <div className="flex flex-wrap justify-center gap-2 mt-6">
-          {['Write React code', 'Analyze image', 'Generate video', 'Debug script'].map(tag => (
-            <button key={tag} onClick={() => setInputText(tag)} className="px-4 py-2 rounded-full bg-[#1F2833]/50 border border-[#45A29E]/20 text-xs hover:border-[#66FCF1]/50 hover:bg-[#66FCF1]/5 transition-all">
-              {tag}
-            </button>
-          ))}
+        <p className="text-[#45A29E] max-w-sm text-lg font-medium">Build, create, and engineering with next-gen models.</p>
+        <div className="flex gap-4 justify-center mt-6">
+          <button 
+            onClick={() => createNewSession("Vibe Builder", ModelType.GEMINI_PRO)}
+            className="flex items-center gap-2 px-6 py-3 bg-[#66FCF1]/10 border border-[#66FCF1]/30 rounded-xl text-[#66FCF1] hover:bg-[#66FCF1]/20 transition-all font-bold"
+          >
+            <Code size={18} /> Vibe Code
+          </button>
         </div>
       </div>
     </div>
@@ -434,18 +456,9 @@ console.log(response.text);`;
             >
               <Plus size={18} /> New Prompt
             </button>
-            <button 
-              onClick={() => {
-                createNewSession("Vibe Builder", ModelType.GEMINI_PRO);
-                updateConfig('temperature', 0.9);
-              }}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-[#45A29E]/10 text-[#45A29E] border border-[#45A29E]/30 rounded-xl hover:bg-[#45A29E]/20 transition-all font-bold text-sm"
-            >
-              <Code size={18} /> Vibe Coding
-            </button>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar px-2 space-y-1">
-            <div className="px-3 py-4 text-[10px] font-bold text-[#45A29E] uppercase tracking-widest flex items-center gap-2">History</div>
+            <div className="px-3 py-4 text-[10px] font-bold text-[#45A29E] uppercase tracking-widest">History</div>
             {sessions.map(s => (
               <div key={s.id} className="group relative">
                 <button
@@ -455,10 +468,10 @@ console.log(response.text);`;
                   }`}
                 >
                   <MessageSquare size={14} className="shrink-0" />
-                  {s.title}
+                  <span className="truncate">{s.title}</span>
                 </button>
                 <button 
-                  onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }}
+                  onClick={(e) => deleteSession(s.id, e)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-red-400 transition-opacity"
                 >
                   <Trash2 size={14} />
@@ -521,23 +534,43 @@ console.log(response.text);`;
                   </div>
 
                   <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                    {activeSession?.messages.length === 0 ? (
+                    {(!activeSession || !activeSession.messages || activeSession.messages.length === 0) ? (
                       renderEmptyState()
                     ) : (
-                      activeSession?.messages.map((m) => (
+                      activeSession.messages.map((m) => (
                         <div key={m.id} className={`flex gap-4 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                           <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center font-bold text-[10px] shadow-lg ${m.role === 'user' ? 'bg-[#45A29E] text-white' : 'bg-[#66FCF1] text-black'}`}>
                             {m.role === 'user' ? 'ME' : 'AI'}
                           </div>
                           <div className={`max-w-[85%] space-y-2 ${m.role === 'user' ? 'text-right' : ''}`}>
                             <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-xl ${m.role === 'user' ? 'bg-[#1F2833] border border-white/5' : 'bg-[#121212] border border-gray-800'}`}>
-                              {m.parts.map((p, i) => (
+                              {m.parts?.map((p, i) => (
                                 <div key={i}>
                                   {p.text && renderMessageContent(p.text)}
                                   {p.inlineData && <img src={`data:${p.inlineData.mimeType};base64,${p.inlineData.data}`} className="mt-3 rounded-2xl max-w-md border border-white/10 mx-auto shadow-2xl" alt="Vision" />}
                                 </div>
                               ))}
                               {m.videoUrl && <video src={m.videoUrl} controls className="mt-3 rounded-2xl border border-white/10 w-full shadow-2xl" />}
+                              
+                              {/* Grounding metadata display - Required for search/maps grounding */}
+                              {m.groundingMetadata?.groundingChunks && (
+                                <div className="mt-4 pt-4 border-t border-gray-800 space-y-2">
+                                  <div className="text-[10px] font-bold text-[#66FCF1] uppercase tracking-widest flex items-center gap-2">
+                                    <Globe size={12}/> Sources
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {m.groundingMetadata.groundingChunks.map((chunk: any, i: number) => {
+                                      const source = chunk.web || chunk.maps;
+                                      if (!source?.uri) return null;
+                                      return (
+                                        <a key={i} href={source.uri} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-[#1F2833] hover:bg-[#66FCF1]/20 text-gray-400 hover:text-[#66FCF1] px-2 py-1 rounded border border-[#45A29E]/20 transition-all flex items-center gap-1">
+                                          {source.title || 'Source'} <ExternalLink size={10}/>
+                                        </a>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -647,12 +680,13 @@ console.log(response.text);`;
                    <div className="border-t border-gray-800 pt-6">
                       <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2"><ShieldCheck size={14} className="text-[#66FCF1]"/> Safety</h3>
                       <div className="space-y-4">
-                        {activeSession?.config.safetySettings.map((s, idx) => (
+                        {activeSession?.config?.safetySettings?.map((s, idx) => (
                           <div key={s.category} className="space-y-1">
                             <label className="text-[10px] text-gray-600 uppercase font-mono">{s.category.replace(/_/g, ' ')}</label>
                             <select 
                               value={s.threshold}
                               onChange={(e) => {
+                                if (!activeSession.config.safetySettings) return;
                                 const newSettings = [...activeSession.config.safetySettings];
                                 newSettings[idx].threshold = e.target.value as any;
                                 updateConfig('safetySettings', newSettings);
