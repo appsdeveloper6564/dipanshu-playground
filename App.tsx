@@ -132,8 +132,16 @@ const App: React.FC = () => {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setSessions(parsed);
-          setActiveSessionId(parsed[0].id);
+          // Additional safety check to ensure each message part is valid
+          const validated = parsed.map((s: ChatSession) => ({
+            ...s,
+            messages: (s.messages || []).map((m: ChatMessage) => ({
+              ...m,
+              parts: (m.parts || []).filter(p => p && (typeof p.text === 'string' || p.inlineData))
+            }))
+          }));
+          setSessions(validated);
+          setActiveSessionId(validated[0].id);
         } else {
           createNewSession();
         }
@@ -269,13 +277,22 @@ const App: React.FC = () => {
     } : s));
   };
 
+  const updateSystemInstruction = (value: string) => {
+    if (!activeSession) return;
+    setSessions(prev => prev.map(s => s.id === activeSessionId ? {
+      ...s,
+      systemInstruction: value
+    } : s));
+  };
+
   const renderMessageContent = (text: string) => {
+    if (typeof text !== 'string') return null;
     if (!text.includes('```')) return <div className="whitespace-pre-wrap">{text}</div>;
     const parts = text.split('```');
     return parts.map((part, i) => {
       if (i % 2 === 1) {
         const lines = part.split('\n');
-        const code = lines.slice(1).join('\n').trim();
+        const code = lines.length > 1 ? lines.slice(1).join('\n').trim() : part.trim();
         return <CodeBlock key={i} code={code} />;
       }
       return <div key={i} className="whitespace-pre-wrap">{part}</div>;
@@ -331,7 +348,7 @@ const App: React.FC = () => {
               <label className="text-xs font-bold text-[#45A29E] uppercase tracking-wider block mb-2">System Instructions</label>
               <textarea 
                 value={activeSession?.systemInstruction || ''}
-                onChange={(e) => updateConfig('systemInstruction', e.target.value)}
+                onChange={(e) => updateSystemInstruction(e.target.value)}
                 placeholder="How should the model behave? (e.g. 'You are a code expert.')"
                 className="w-full h-20 bg-[#0B0C10]/50 border border-[#45A29E]/20 rounded-lg p-3 text-sm focus:border-[#66FCF1] focus:ring-1 focus:ring-[#66FCF1] outline-none resize-none custom-scrollbar"
               />
@@ -357,7 +374,7 @@ const App: React.FC = () => {
                           ? 'bg-[#1F2833] text-white border border-[#45A29E]/20' 
                           : 'bg-[#0B0C10] text-[#C5C6C7] border border-[#66FCF1]/10 flex flex-col gap-3'
                       }`}>
-                        {msg.parts.map((p, pIdx) => (
+                        {msg.parts && msg.parts.map((p, pIdx) => (
                           <div key={pIdx}>
                             {p.text && renderMessageContent(p.text)}
                             {p.inlineData && (
