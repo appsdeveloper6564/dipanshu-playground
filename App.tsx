@@ -20,13 +20,14 @@ import {
   LogOut,
   Settings,
   Copy,
-  Check
+  Check,
+  Play
 } from 'lucide-react';
 import { ChatSession, ChatMessage, ModelType, MediaFile } from './types';
 import { DEFAULT_SYSTEM_INSTRUCTION, MODELS } from './constants';
 import { generateAIContent } from './services/geminiService';
 
-// --- Sub-components for better organization and reliability ---
+const CODE_BUILDER_INSTRUCTION = "You are an expert Senior Frontend Engineer. Your goal is to help users build high-quality, modern web applications. When asked to build an app or code snippet, provide clean, production-ready code using React, Tailwind CSS, and Lucide React. Always explain your technical choices briefly and ensure the code is modular and accessible.";
 
 const Sidebar: React.FC<{
   sessions: ChatSession[];
@@ -34,7 +35,8 @@ const Sidebar: React.FC<{
   onSelectSession: (id: string) => void;
   onNewSession: () => void;
   onVibeCoding: () => void;
-}> = ({ sessions, activeSessionId, onSelectSession, onNewSession, onVibeCoding }) => (
+  onDeleteSession: (id: string) => void;
+}> = ({ sessions, activeSessionId, onSelectSession, onNewSession, onVibeCoding, onDeleteSession }) => (
   <div className="w-64 h-full bg-[#1F2833] flex flex-col border-r border-[#45A29E]/20 shrink-0">
     <div className="p-4 border-b border-[#45A29E]/20">
       <div className="flex items-center gap-2 mb-6">
@@ -62,20 +64,27 @@ const Sidebar: React.FC<{
       <div className="px-2 py-3 text-xs font-semibold text-[#45A29E] uppercase tracking-wider">Recent Sessions</div>
       <div className="space-y-1">
         {sessions.map(session => (
-          <button
-            key={session.id}
-            onClick={() => onSelectSession(session.id)}
-            className={`w-full text-left p-3 rounded-md flex items-center gap-3 transition-colors group ${
-              activeSessionId === session.id 
-                ? 'bg-[#66FCF1]/10 text-[#66FCF1] border-l-2 border-[#66FCF1]' 
-                : 'text-gray-400 hover:bg-[#1F2833]/50 hover:text-white'
-            }`}
-          >
-            <MessageSquare size={16} />
-            <span className="truncate flex-1 text-sm">{session.title || 'Untitled Prompt'}</span>
-            <ChevronRight size={14} className="opacity-0 group-hover:opacity-100" />
-          </button>
+          <div key={session.id} className="group relative">
+            <button
+              onClick={() => onSelectSession(session.id)}
+              className={`w-full text-left p-3 rounded-md flex items-center gap-3 transition-colors ${
+                activeSessionId === session.id 
+                  ? 'bg-[#66FCF1]/10 text-[#66FCF1] border-l-2 border-[#66FCF1]' 
+                  : 'text-gray-400 hover:bg-[#1F2833]/50 hover:text-white'
+              }`}
+            >
+              <MessageSquare size={16} className="shrink-0" />
+              <span className="truncate flex-1 text-sm">{session.title || 'Untitled Prompt'}</span>
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <X size={14} />
+            </button>
+          </div>
         ))}
+        {sessions.length === 0 && <p className="text-center text-xs text-gray-600 mt-4">No history yet</p>}
       </div>
     </div>
     <div className="p-4 border-t border-[#45A29E]/20 bg-[#0B0C10]/40">
@@ -93,25 +102,52 @@ const Sidebar: React.FC<{
   </div>
 );
 
-const CodeBlock: React.FC<{ code: string }> = ({ code }) => {
+const CodeBlock: React.FC<{ code: string; language?: string }> = ({ code, language }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleDownload = () => {
+    const blob = new Blob([code], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `app-code.${language || 'txt'}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="relative group my-4">
-      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-        <button 
-          onClick={handleCopy}
-          className="bg-gray-800 text-white p-2 rounded-md hover:bg-gray-700 border border-gray-600 shadow-xl"
-        >
-          {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-        </button>
+    <div className="relative group my-4 rounded-xl border border-[#45A29E]/20 overflow-hidden bg-[#0B0C10]">
+      <div className="bg-[#1F2833] px-4 py-2 border-b border-[#45A29E]/10 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500/50" />
+          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/50" />
+          <div className="w-2.5 h-2.5 rounded-full bg-green-500/50" />
+          <span className="text-[10px] text-gray-500 uppercase font-bold ml-2 tracking-widest">{language || 'code'}</span>
+        </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={handleDownload}
+            className="p-1.5 text-gray-400 hover:text-[#66FCF1] transition-colors"
+            title="Download code"
+          >
+            <Download size={14} />
+          </button>
+          <button 
+            onClick={handleCopy}
+            className="p-1.5 text-gray-400 hover:text-[#66FCF1] transition-colors"
+            title="Copy to clipboard"
+          >
+            {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+          </button>
+        </div>
       </div>
-      <pre className="custom-scrollbar border border-[#66FCF1]/10 shadow-inner">
-        <code className="text-blue-200">{code}</code>
+      <pre className="p-4 overflow-x-auto custom-scrollbar text-sm leading-relaxed">
+        <code className="text-emerald-300 font-mono">{code}</code>
       </pre>
     </div>
   );
@@ -132,7 +168,6 @@ const App: React.FC = () => {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Additional safety check to ensure each message part is valid
           const validated = parsed.map((s: ChatSession) => ({
             ...s,
             messages: (s.messages || []).map((m: ChatMessage) => ({
@@ -185,6 +220,38 @@ const App: React.FC = () => {
     setActiveSessionId(newSession.id);
   };
 
+  const startVibeCoding = () => {
+    const newSession: ChatSession = {
+      id: Date.now().toString(),
+      title: "Vibe Code Builder",
+      messages: [],
+      systemInstruction: CODE_BUILDER_INSTRUCTION,
+      config: {
+        temperature: 0.2, // Lower temperature for more accurate code
+        topP: 0.95,
+        topK: 40,
+        model: ModelType.GEMINI_PRO,
+        grounding: false,
+      },
+      lastModified: Date.now()
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+  };
+
+  const deleteSession = (id: string) => {
+    setSessions(prev => {
+      const filtered = prev.filter(s => s.id !== id);
+      if (activeSessionId === id) {
+        setActiveSessionId(filtered.length > 0 ? filtered[0].id : null);
+        if (filtered.length === 0) {
+          setTimeout(() => createNewSession(), 0);
+        }
+      }
+      return filtered;
+    });
+  };
+
   const handleSendMessage = async () => {
     if (!inputText.trim() && attachedFiles.length === 0) return;
     if (!activeSession) return;
@@ -205,7 +272,8 @@ const App: React.FC = () => {
     };
 
     const updatedMessages = [...activeSession.messages, userMessage];
-    const newTitle = activeSession.messages.length === 0 ? (inputText.slice(0, 30) || "Media Prompt") : activeSession.title;
+    const firstUserText = updatedMessages.find(m => m.role === 'user')?.parts.find(p => p.text)?.text;
+    const newTitle = activeSession.messages.length === 0 ? (firstUserText?.slice(0, 30) || "Media Prompt") : activeSession.title;
 
     setSessions(prev => prev.map(s => s.id === activeSession.id ? {
       ...s,
@@ -288,12 +356,12 @@ const App: React.FC = () => {
   const renderMessageContent = (text: string) => {
     if (typeof text !== 'string') return null;
     if (!text.includes('```')) return <div className="whitespace-pre-wrap">{text}</div>;
-    const parts = text.split('```');
+    const parts = text.split(/```(\w+)?/);
     return parts.map((part, i) => {
-      if (i % 2 === 1) {
-        const lines = part.split('\n');
-        const code = lines.length > 1 ? lines.slice(1).join('\n').trim() : part.trim();
-        return <CodeBlock key={i} code={code} />;
+      if (i % 2 === 1) return null; // language tag
+      if (i > 0 && i % 2 === 0) {
+        const lang = parts[i-1] || 'code';
+        return <CodeBlock key={i} code={part.trim()} language={lang} />;
       }
       return <div key={i} className="whitespace-pre-wrap">{part}</div>;
     });
@@ -306,7 +374,8 @@ const App: React.FC = () => {
         activeSessionId={activeSessionId}
         onSelectSession={setActiveSessionId}
         onNewSession={() => createNewSession()}
-        onVibeCoding={() => createNewSession("Vibe App Scaffold", ModelType.GEMINI_PRO)}
+        onVibeCoding={startVibeCoding}
+        onDeleteSession={deleteSession}
       />
 
       <div className="flex-1 flex flex-col h-full relative">
@@ -345,12 +414,19 @@ const App: React.FC = () => {
         <div className="flex-1 flex overflow-hidden">
           <div className="flex-1 flex flex-col min-w-0 bg-[#0B0C10]">
             <div className="p-4 border-b border-[#45A29E]/10 bg-[#1F2833]/20 shrink-0">
-              <label className="text-xs font-bold text-[#45A29E] uppercase tracking-wider block mb-2">System Instructions</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-bold text-[#45A29E] uppercase tracking-wider block">System Instructions</label>
+                {activeSession?.systemInstruction === CODE_BUILDER_INSTRUCTION && (
+                  <span className="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full font-bold border border-emerald-500/30 flex items-center gap-1">
+                    <Code size={10}/> Code Builder Mode
+                  </span>
+                )}
+              </div>
               <textarea 
                 value={activeSession?.systemInstruction || ''}
                 onChange={(e) => updateSystemInstruction(e.target.value)}
                 placeholder="How should the model behave? (e.g. 'You are a code expert.')"
-                className="w-full h-20 bg-[#0B0C10]/50 border border-[#45A29E]/20 rounded-lg p-3 text-sm focus:border-[#66FCF1] focus:ring-1 focus:ring-[#66FCF1] outline-none resize-none custom-scrollbar"
+                className="w-full h-20 bg-[#0B0C10]/50 border border-[#45A29E]/20 rounded-lg p-3 text-sm focus:border-[#66FCF1] focus:ring-1 focus:ring-[#66FCF1] outline-none resize-none custom-scrollbar text-gray-300"
               />
             </div>
 
@@ -358,7 +434,10 @@ const App: React.FC = () => {
               {!activeSession?.messages.length ? (
                 <div className="h-full flex flex-col items-center justify-center text-center opacity-50 space-y-4">
                   <Terminal size={48} className="text-[#66FCF1]" />
-                  <p>Design, build, and prototype with Gemini.</p>
+                  <div className="max-w-md">
+                    <h3 className="text-xl font-bold text-white mb-2">Design, Build, Prototype</h3>
+                    <p className="text-sm">Start a conversation or click <b>Vibe Coding</b> for high-quality developer assistance with full code generation.</p>
+                  </div>
                 </div>
               ) : (
                 activeSession.messages.map((msg) => (
@@ -366,7 +445,7 @@ const App: React.FC = () => {
                     <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 shadow-md ${
                       msg.role === 'user' ? 'bg-[#45A29E]' : 'bg-[#66FCF1]'
                     }`}>
-                      {msg.role === 'user' ? <span className="text-xs font-bold">U</span> : <span className="text-[#0B0C10] font-bold text-xs italic">G</span>}
+                      {msg.role === 'user' ? <span className="text-xs font-bold text-white">U</span> : <span className="text-[#0B0C10] font-bold text-xs italic">G</span>}
                     </div>
                     <div className={`max-w-[85%] space-y-2 ${msg.role === 'user' ? 'text-right' : ''}`}>
                       <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-lg ${
@@ -407,6 +486,9 @@ const App: React.FC = () => {
                           </div>
                         )}
                       </div>
+                      <span className="text-[10px] text-gray-600 block px-2">
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
                   </div>
                 ))
@@ -462,6 +544,26 @@ const App: React.FC = () => {
               Model Controls
             </h3>
             <div className="space-y-8">
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-widest block mb-3">Model</label>
+                <div className="space-y-2">
+                  {MODELS.map(m => (
+                    <button 
+                      key={m.id}
+                      onClick={() => updateConfig('model', m.id)}
+                      className={`w-full text-left p-2.5 rounded-lg border text-xs transition-all ${
+                        activeSession?.config.model === m.id 
+                          ? 'bg-[#66FCF1]/10 border-[#66FCF1] text-[#66FCF1]' 
+                          : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:border-gray-600'
+                      }`}
+                    >
+                      <p className="font-bold">{m.name}</p>
+                      <p className="text-[10px] opacity-60 mt-0.5">{m.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {activeSession?.config.model === ModelType.GEMINI_IMAGE ? (
                 <div>
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-widest block mb-3">Aspect Ratio</label>
@@ -497,12 +599,6 @@ const App: React.FC = () => {
                   </div>
                 </>
               )}
-              <div className="pt-6 border-t border-[#45A29E]/10">
-                 <button className="w-full flex items-center justify-center gap-2 p-3 bg-white/5 hover:bg-[#66FCF1]/10 hover:text-[#66FCF1] rounded-xl transition-all border border-white/5 group shadow-sm">
-                    <Download size={16} className="text-gray-400 group-hover:text-[#66FCF1]" />
-                    <span className="text-xs font-bold text-gray-300 group-hover:text-[#66FCF1]">Export Code</span>
-                 </button>
-              </div>
             </div>
           </div>
         </div>
