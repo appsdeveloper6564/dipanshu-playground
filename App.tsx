@@ -88,7 +88,6 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<MediaFile[]>([]);
-  const [previewCode, setPreviewCode] = useState('');
   const [activeTab, setActiveTab] = useState<'prompt' | 'preview' | 'code'>('prompt');
   const [showAdsHub, setShowAdsHub] = useState(false);
   
@@ -131,6 +130,23 @@ const App: React.FC = () => {
   }, [activeSessionId, isGenerating, sessions]);
 
   const activeSession = useMemo(() => sessions.find(s => s.id === activeSessionId), [sessions, activeSessionId]);
+
+  const previewCode = useMemo(() => {
+    if (!activeSession) return '';
+    // Look through messages from most recent to oldest to find the latest code block
+    for (let i = activeSession.messages.length - 1; i >= 0; i--) {
+      const msg = activeSession.messages[i];
+      if (msg.role === 'model') {
+        for (const part of msg.parts) {
+          if (part.text) {
+            const codeMatch = part.text.match(/```(?:html|xml|javascript|jsx|tsx|svg|css)\n([\s\S]*?)```/);
+            if (codeMatch) return codeMatch[1];
+          }
+        }
+      }
+    }
+    return '';
+  }, [activeSession]);
 
   const detectedVariables = useMemo(() => {
     if (!activeSession) return [];
@@ -237,11 +253,6 @@ const App: React.FC = () => {
           messages: [...s.messages, modelMessage],
           lastModified: Date.now()
         } : s));
-
-        if (response.text.includes('```html') || response.text.includes('```xml')) {
-          const codeMatch = response.text.match(/```(?:html|xml|javascript|jsx|tsx)\n([\s\S]*?)```/);
-          if (codeMatch) setPreviewCode(codeMatch[1]);
-        }
       }
     } catch (e: any) { 
       console.error(e);
@@ -338,7 +349,7 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen w-screen bg-[#0B0C10] text-[#C5C6C7] overflow-hidden relative">
+    <div className="flex h-screen w-screen bg-[#0B0C10] text-[#C5C6C7] overflow-hidden relative pb-[80px]">
       {/* Sidebar */}
       {!showAdsHub && (
         <div className="w-64 border-r border-[#45A29E]/20 flex flex-col bg-[#1F2833]/30 shrink-0">
@@ -624,7 +635,7 @@ const App: React.FC = () => {
                            <script src="https://cdn.tailwindcss.com"></script>
                            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
                          </head>
-                         <body class="bg-gray-50">${previewCode}</body>
+                         <body class="bg-gray-50 p-4">${previewCode}</body>
                        </html>
                      `}
                      className="w-full h-full border-none"
@@ -633,14 +644,14 @@ const App: React.FC = () => {
                  ) : (
                    <div className="h-full flex items-center justify-center bg-[#0B0C10] text-gray-600 flex-col gap-4">
                      <Terminal size={48} />
-                     <p className="text-sm font-medium">No executable HTML code detected in this session.</p>
+                     <p className="text-sm font-medium">No executable code detected in this session history.</p>
                      <button onClick={() => setActiveTab('prompt')} className="px-4 py-2 border border-gray-700 rounded-lg text-xs hover:bg-white/5">Back to Editor</button>
                    </div>
                  )}
                  {previewCode && (
                    <div className="absolute top-4 right-4 flex gap-2">
                       <button onClick={() => copyToClipboard(previewCode)} className="bg-[#66FCF1] text-black px-4 py-2 rounded-lg text-xs font-bold shadow-2xl flex items-center gap-2 hover:bg-white transition-all">
-                         <Copy size={12}/> Copy HTML
+                         <Copy size={12}/> Copy Code
                       </button>
                    </div>
                  )}
@@ -695,8 +706,6 @@ const App: React.FC = () => {
           <span className="text-xs font-bold uppercase tracking-widest pr-4 opacity-0 group-hover:opacity-100 transition-opacity">Ads Hub</span>
         )}
       </button>
-
-      {/* Sidebar Overlay on Ads Hub if needed - but here we just replace the whole main area */}
     </div>
   );
 };
