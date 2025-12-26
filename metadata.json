@@ -1,6 +1,6 @@
 {
-  "name": "dipanshu playground",
-  "description": "A comprehensive AI development environment featuring multi-model support, prompt engineering, multimodal inputs, and real-time voice interaction, inspired by Google AI Studio.",
+  "name": "dipanshu-playground",
+  "description": "A feature-rich AI creative suite featuring dipanshu-playground branding, voice integration, and a dedicated high-fidelity Image Studio.",
   "requestFramePermissions": [
     "camera",
     "microphone"
