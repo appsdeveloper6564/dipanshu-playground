@@ -4,13 +4,11 @@ import {
   Send, Settings2, Upload, Mic, Globe, Code, Download, Loader2, X, Image as ImageIcon,
   Terminal, Plus, MessageSquare, LogOut, Settings, Copy, Check, Play, Maximize2,
   MicOff, Sparkles, LayoutGrid, Video, Info, Trash2, Eye, EyeOff, ShieldCheck, Braces, 
-  ChevronRight, FileCode, Ghost, ExternalLink, ArrowLeft
+  ChevronRight, FileCode, Ghost, ExternalLink, ArrowLeft, Zap
 } from 'lucide-react';
 import { ChatSession, ChatMessage, ModelType, MediaFile, SafetySetting } from './types';
 import { DEFAULT_SYSTEM_INSTRUCTION, MODELS, SAFETY_THRESHOLDS } from './constants';
 import { generateAIContent, generateVideoContent } from './services/geminiService';
-
-const CODE_BUILDER_INSTRUCTION = "You are an expert Senior Frontend Engineer. Your goal is to help users build high-quality, modern web applications. When asked to build an app or code snippet, provide clean, production-ready code using React, Tailwind CSS, and Lucide React. Always explain technical choices briefly.";
 
 const CodeBlock: React.FC<{ code: string; language?: string }> = ({ code, language }) => {
   const [copied, setCopied] = useState(false);
@@ -133,7 +131,6 @@ const App: React.FC = () => {
 
   const previewCode = useMemo(() => {
     if (!activeSession) return '';
-    // Look through messages from most recent to oldest to find the latest code block
     for (let i = activeSession.messages.length - 1; i >= 0; i--) {
       const msg = activeSession.messages[i];
       if (msg.role === 'model') {
@@ -155,6 +152,92 @@ const App: React.FC = () => {
     if (!matches) return [];
     return Array.from(new Set(matches.map(m => m.replace(/{{|}}/g, ''))));
   }, [activeSession, inputText]);
+
+  // Fix: Added missing generateExportCode function
+  const generateExportCode = (lang: string) => {
+    const model = activeSession?.config.model || 'gemini-3-flash-preview';
+    const systemInstruction = activeSession?.systemInstruction || '';
+    
+    if (lang === 'python') {
+      return `import google.generativeai as genai
+import os
+
+# Set up the API key (replace with your environment variable or string)
+genai.configure(api_key=os.environ.get("API_KEY", "YOUR_API_KEY"))
+
+model = genai.GenerativeModel(
+    model_name="${model}",
+    system_instruction="${systemInstruction.replace(/"/g, '\\"')}"
+)
+
+response = model.generate_content("Hello!")
+print(response.text)`;
+    }
+    
+    if (lang === 'js') {
+      return `import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const response = await ai.models.generateContent({
+  model: "${model}",
+  contents: "Hello!",
+  config: {
+    systemInstruction: "${systemInstruction.replace(/"/g, '\\"')}"
+  }
+});
+
+console.log(response.text);`;
+    }
+    
+    if (lang === 'curl') {
+      return `curl "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=\${API_KEY}" \\
+-H "Content-Type: application/json" \\
+-d '{
+  "contents": [{
+    "parts": [{"text": "Hello!"}]
+  }],
+  "systemInstruction": {
+    "parts": [{"text": "${systemInstruction.replace(/"/g, '\\"')}"}]
+  }
+}'`;
+    }
+    return '';
+  };
+
+  // Fix: Added missing renderAdsHub function
+  const renderAdsHub = () => (
+    <div className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-[#0B0C10]">
+      <div className="max-w-4xl mx-auto space-y-12">
+        <div className="flex items-center justify-between border-b border-gray-800 pb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+              <ExternalLink size={28} className="text-indigo-400" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-white tracking-tight uppercase">Ads Hub</h2>
+              <p className="text-sm text-gray-500">Manage promotional segments and external links.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowAdsHub(false)}
+            className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/10"
+          >
+            <ArrowLeft size={20} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <AdUnit id="ad-unit-1" width={300} height={250} />
+          <AdUnit id="ad-unit-2" width={300} height={250} />
+          <AdUnit id="ad-unit-top" width={728} height={90} />
+          <div className="p-8 border border-dashed border-[#45A29E]/20 rounded-2xl flex flex-col items-center justify-center text-center gap-4 bg-[#1F2833]/10">
+            <Info className="text-[#45A29E]" size={32} />
+            <p className="text-sm font-medium text-gray-500">Ad inventory loading...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const createNewSession = (title = "New Prompt", model = ModelType.GEMINI_FLASH) => {
     const newSession: ChatSession = {
@@ -189,9 +272,22 @@ const App: React.FC = () => {
     if (!inputText.trim() && attachedFiles.length === 0) return;
     if (!activeSession) return;
 
-    if (activeSession.config.model.includes('native-audio')) {
-      alert("This model is for Live Audio sessions only and cannot be used in standard chat. Please switch to a Gemini 3 or Flash model.");
-      return;
+    // Handle mandatory API Key selection for specific models as per guidelines
+    const isVeoModel = activeSession.config.model === ModelType.VEO_VIDEO;
+    const isGeminiProImage = activeSession.config.model === ModelType.GEMINI_IMAGE_PRO;
+    
+    if (isVeoModel || isGeminiProImage) {
+      if (typeof window.aistudio?.hasSelectedApiKey === 'function') {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+          if (typeof window.aistudio?.openSelectKey === 'function') {
+            await window.aistudio.openSelectKey();
+          } else {
+            alert("This model requires selecting an API key from a paid GCP project.");
+            return;
+          }
+        }
+      }
     }
 
     const userMessage: ChatMessage = {
@@ -211,7 +307,7 @@ const App: React.FC = () => {
       ...s,
       messages: updatedMessages,
       lastModified: Date.now(),
-      title: activeSession.messages.length === 0 ? inputText.slice(0, 30) : s.title
+      title: activeSession.messages.length === 0 ? (inputText.slice(0, 30) || "Visual Analysis") : s.title
     } : s));
 
     setInputText('');
@@ -255,7 +351,11 @@ const App: React.FC = () => {
         } : s));
       }
     } catch (e: any) { 
-      console.error(e);
+      console.error("Gemini Error:", e);
+      // Reset key selection if entity was not found as per guidelines
+      if (e.message?.includes("Requested entity was not found") && typeof window.aistudio?.openSelectKey === 'function') {
+        await window.aistudio.openSelectKey();
+      }
       alert(`Generation failed: ${e.message || "Unknown error"}`); 
     } finally { setIsGenerating(false); }
   };
@@ -294,66 +394,34 @@ const App: React.FC = () => {
     alert("Copied to clipboard!");
   };
 
-  const generateExportCode = (lang: 'python' | 'js' | 'curl') => {
-    if (!activeSession) return '';
-    const model = activeSession.config.model;
-    const sys = activeSession.systemInstruction;
-    
-    if (lang === 'python') {
-      return `from google import genai\n\nclient = genai.Client(api_key="YOUR_API_KEY")\n\nresponse = client.models.generate_content(\n    model="${model}",\n    contents="${inputText || 'Hello'}",\n    config={\n        "system_instruction": "${sys}",\n        "temperature": ${activeSession.config.temperature},\n    }\n)\n\nprint(response.text)`;
-    }
-    if (lang === 'js') {
-      return `import { GoogleGenAI } from "@google/genai";\n\nconst ai = new GoogleGenAI({ apiKey: "YOUR_API_KEY" });\n\nconst response = await ai.models.generateContent({\n  model: "${model}",\n  contents: "${inputText || 'Hello'}",\n  config: {\n    systemInstruction: "${sys}",\n    temperature: ${activeSession.config.temperature}\n  }\n});\n\nconsole.log(response.text);`;
-    }
-    return `curl "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=YOUR_API_KEY" \\\n-H 'Content-Type: application/json' \\\n-X POST \\\n-d '{\n  "contents": [{\n    "parts": [{"text": "${inputText || 'Hello'}"}]\n  }],\n  "system_instruction": {"parts": [{"text": "${sys}"}]},\n  "generationConfig": {\n    "temperature": ${activeSession.config.temperature}\n  }\n}'`;
-  };
-
-  const renderAdsHub = () => (
-    <div className="flex-1 overflow-y-auto bg-[#0B0C10] p-12 custom-scrollbar relative">
-      <div className="max-w-6xl mx-auto space-y-12">
-        <div className="flex items-center justify-between border-b border-[#45A29E]/20 pb-8">
-           <div className="flex items-center gap-6">
-              <div className="w-16 h-16 bg-[#66FCF1]/20 rounded-2xl flex items-center justify-center animate-glow">
-                 <Globe size={32} className="text-[#66FCF1]" />
-              </div>
-              <div>
-                 <h2 className="text-3xl font-bold text-white tracking-tight aqua-text-glow">Ads Hub</h2>
-                 <p className="text-gray-500 mt-1">Exclusive high-performance ad formats and partnerships.</p>
-              </div>
-           </div>
-           <button 
-             onClick={() => setShowAdsHub(false)}
-             className="flex items-center gap-2 px-6 py-3 bg-[#66FCF1] text-[#0B0C10] font-bold rounded-xl hover:shadow-[0_0_15px_#66FCF1] transition-all"
-           >
-             <ArrowLeft size={18} /> Back to Studio
-           </button>
+  const renderEmptyState = () => (
+    <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-8 select-none">
+      <div className="relative">
+        <div className="absolute inset-0 bg-[#66FCF1]/20 blur-3xl rounded-full scale-150 animate-pulse"></div>
+        <div className="w-24 h-24 rounded-[2rem] bg-gradient-to-tr from-[#1F2833] to-[#0B0C10] flex items-center justify-center border border-[#66FCF1]/30 relative z-10 shadow-2xl">
+          <Zap size={48} className="text-[#66FCF1] drop-shadow-[0_0_10px_rgba(102,252,241,0.5)]" />
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          <AdUnit id="eedd446f201ec86e07cc453226a8eb11" width={468} height={60} />
-          <AdUnit id="8623e6419adf6e5bfa3fd0dfcd5d6824" width={160} height={300} />
-          <AdUnit id="503504d5dc764e1d8570cc0e9292acf0" width={320} height={50} />
-          <AdUnit id="d3a9273ab8a3a173e913d563e27511f6" width={300} height={250} />
-          <AdUnit id="9425000b9be45875051c1a55e38f1444" width={160} height={600} />
-          <AdUnit id="787c157f9ba5025780bd9bccc1840818" width={728} height={90} />
-        </div>
-
-        <div className="mt-16 p-8 bg-[#1F2833]/40 border border-[#66FCF1]/20 rounded-3xl text-center space-y-4">
-           <Ghost size={48} className="mx-auto text-gray-600" />
-           <h3 className="text-xl font-bold text-white">Want to Advertise Here?</h3>
-           <p className="text-gray-400 max-w-lg mx-auto">Dipanshu-Studio reaches thousands of engineers daily. Get your product in front of the world's best developers.</p>
-           <button className="px-8 py-3 bg-[#45A29E] text-white font-bold rounded-lg hover:bg-white hover:text-black transition-all">Contact Partnerships</button>
+      </div>
+      <div className="space-y-3 relative z-10">
+        <h3 className="text-3xl font-extrabold text-white tracking-tight">AI Playground</h3>
+        <p className="text-[#45A29E] max-w-sm text-lg font-medium">Ready for engineering. Enter a prompt or upload an image to start building.</p>
+        <div className="flex flex-wrap justify-center gap-2 mt-6">
+          {['Write React code', 'Analyze image', 'Generate video', 'Debug script'].map(tag => (
+            <button key={tag} onClick={() => setInputText(tag)} className="px-4 py-2 rounded-full bg-[#1F2833]/50 border border-[#45A29E]/20 text-xs hover:border-[#66FCF1]/50 hover:bg-[#66FCF1]/5 transition-all">
+              {tag}
+            </button>
+          ))}
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="flex h-screen w-screen bg-[#0B0C10] text-[#C5C6C7] overflow-hidden relative pb-[80px]">
+    <div className="flex h-screen w-screen bg-[#0B0C10] text-[#C5C6C7] overflow-hidden relative pb-[85px]">
       {/* Sidebar */}
       {!showAdsHub && (
-        <div className="w-64 border-r border-[#45A29E]/20 flex flex-col bg-[#1F2833]/30 shrink-0">
-          <div className="p-4 flex items-center gap-3 border-b border-[#45A29E]/20">
+        <div className="w-64 border-r border-[#45A29E]/20 flex flex-col bg-[#1F2833]/30 shrink-0 z-20">
+          <div className="p-4 flex items-center gap-3 border-b border-[#45A29E]/20 bg-[#0B0C10]/40">
             <div className="w-8 h-8 bg-[#66FCF1] rounded-lg flex items-center justify-center shadow-[0_0_10px_#66FCF1]">
               <Terminal size={18} className="text-[#0B0C10]" />
             </div>
@@ -362,7 +430,7 @@ const App: React.FC = () => {
           <div className="p-4 space-y-2">
             <button 
               onClick={() => createNewSession()}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#66FCF1]/10 text-[#66FCF1] border border-[#66FCF1]/30 rounded-lg hover:bg-[#66FCF1]/20 transition-all font-medium"
+              className="w-full flex items-center justify-center gap-2 py-3 bg-[#66FCF1]/10 text-[#66FCF1] border border-[#66FCF1]/30 rounded-xl hover:bg-[#66FCF1]/20 transition-all font-bold text-sm shadow-sm"
             >
               <Plus size={18} /> New Prompt
             </button>
@@ -371,26 +439,26 @@ const App: React.FC = () => {
                 createNewSession("Vibe Builder", ModelType.GEMINI_PRO);
                 updateConfig('temperature', 0.9);
               }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#45A29E]/10 text-[#45A29E] border border-[#45A29E]/30 rounded-lg hover:bg-[#45A29E]/20 transition-all font-medium"
+              className="w-full flex items-center justify-center gap-2 py-3 bg-[#45A29E]/10 text-[#45A29E] border border-[#45A29E]/30 rounded-xl hover:bg-[#45A29E]/20 transition-all font-bold text-sm"
             >
               <Code size={18} /> Vibe Coding
             </button>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar px-2 space-y-1">
-            <div className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">History</div>
+            <div className="px-3 py-4 text-[10px] font-bold text-[#45A29E] uppercase tracking-widest flex items-center gap-2">History</div>
             {sessions.map(s => (
               <div key={s.id} className="group relative">
                 <button
                   onClick={() => setActiveSessionId(s.id)}
-                  className={`w-full text-left p-2.5 rounded-lg text-sm truncate flex items-center gap-3 transition-colors ${
-                    activeSessionId === s.id ? 'bg-[#66FCF1]/10 text-[#66FCF1] border border-[#66FCF1]/20' : 'text-gray-400 hover:bg-white/5'
+                  className={`w-full text-left p-3 rounded-xl text-sm truncate flex items-center gap-3 transition-all ${
+                    activeSessionId === s.id ? 'bg-[#66FCF1]/10 text-[#66FCF1] border border-[#66FCF1]/20 shadow-sm' : 'text-gray-400 hover:bg-white/5'
                   }`}
                 >
                   <MessageSquare size={14} className="shrink-0" />
                   {s.title}
                 </button>
                 <button 
-                  onClick={() => setSessions(prev => prev.filter(x => x.id !== s.id))}
+                  onClick={(e) => { e.stopPropagation(); setSessions(prev => prev.filter(x => x.id !== s.id)); }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-red-400 transition-opacity"
                 >
                   <Trash2 size={14} />
@@ -398,118 +466,98 @@ const App: React.FC = () => {
               </div>
             ))}
           </div>
-          <div className="p-4 border-t border-[#45A29E]/20 space-y-1">
-             <button className="w-full flex items-center gap-3 p-2 text-gray-400 hover:text-white text-sm transition-colors"><Settings size={14}/> Settings</button>
-             <button className="w-full flex items-center gap-3 p-2 text-red-400/80 hover:text-red-400 text-sm transition-colors"><LogOut size={14}/> Logout</button>
+          <div className="p-4 border-t border-[#45A29E]/10 bg-[#0B0C10]/40 space-y-1">
+             <button className="w-full flex items-center gap-3 p-2 text-gray-500 hover:text-white text-sm transition-colors"><Settings size={16}/> Settings</button>
+             <button className="w-full flex items-center gap-3 p-2 text-red-400/80 hover:text-red-400 text-sm transition-colors"><LogOut size={16}/> Logout</button>
           </div>
         </div>
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0B0C10] relative z-10">
         {!showAdsHub ? (
           <>
             <header className="h-14 border-b border-[#45A29E]/20 flex items-center justify-between px-6 bg-[#0B0C10]/95 backdrop-blur-md shrink-0">
               <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500"><ChevronRight size={14}/></span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-gray-500 shrink-0"><ChevronRight size={14}/></span>
                   <input 
                     value={activeSession?.title || ''} 
                     onChange={(e) => updateConfig('title', e.target.value)}
-                    className="bg-transparent border-none text-white font-semibold focus:ring-0 text-sm w-48"
+                    className="bg-transparent border-none text-white font-bold focus:ring-0 text-sm w-48 truncate"
                   />
                 </div>
-                <div className="flex gap-4 border-l border-gray-800 pl-4 h-6 items-center">
-                  <button 
-                    onClick={() => setActiveTab('prompt')}
-                    className={`text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-all ${activeTab === 'prompt' ? 'border-[#66FCF1] text-[#66FCF1]' : 'border-transparent text-gray-500'}`}
-                  >
-                    Prompt
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('preview')}
-                    className={`text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-all ${activeTab === 'preview' ? 'border-[#66FCF1] text-[#66FCF1]' : 'border-transparent text-gray-500'}`}
-                  >
-                    Preview {previewCode && <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse ml-1" />}
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('code')}
-                    className={`text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-all ${activeTab === 'code' ? 'border-[#66FCF1] text-[#66FCF1]' : 'border-transparent text-gray-500'}`}
-                  >
-                    Get Code
-                  </button>
+                <div className="flex gap-4 border-l border-gray-800 pl-4 h-6 items-center shrink-0">
+                  {(['prompt', 'preview', 'code'] as const).map(tab => (
+                    <button 
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-all ${activeTab === tab ? 'border-[#66FCF1] text-[#66FCF1]' : 'border-transparent text-gray-500'}`}
+                    >
+                      {tab} {tab === 'preview' && previewCode && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ml-1" />}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                 <button onClick={() => copyToClipboard(JSON.stringify(activeSession, null, 2))} className="px-3 py-1.5 border border-[#45A29E]/30 rounded text-[10px] font-bold uppercase hover:bg-white/5 transition-all">JSON Export</button>
-                 <button className="px-4 py-1.5 bg-[#66FCF1] text-[#0B0C10] font-bold rounded text-xs hover:shadow-[0_0_10px_#66FCF1] transition-all">Save Changes</button>
+              <div className="flex items-center gap-3 shrink-0">
+                 <button onClick={() => copyToClipboard(JSON.stringify(activeSession, null, 2))} className="px-3 py-1.5 border border-[#45A29E]/30 rounded-lg text-[10px] font-bold uppercase hover:bg-[#1F2833] transition-all">JSON</button>
+                 <button className="px-4 py-1.5 bg-[#66FCF1] text-[#0B0C10] font-bold rounded-lg text-xs hover:shadow-[0_0_15px_#66FCF1] transition-all">Save</button>
               </div>
             </header>
 
             {activeTab === 'prompt' ? (
               <div className="flex-1 flex overflow-hidden">
-                <div className="flex-1 flex flex-col overflow-hidden bg-[#0B0C10]">
-                  <div className="p-4 border-b border-[#45A29E]/10 space-y-3 bg-[#1F2833]/10">
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="p-4 border-b border-[#45A29E]/10 space-y-3 bg-[#1F2833]/10 shrink-0">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold text-[#45A29E] uppercase tracking-widest flex items-center gap-2"><Braces size={12}/> System Instruction</span>
-                      <div className="flex gap-2 text-[10px] text-gray-600">
-                        <span>Est. Tokens: {Math.ceil((activeSession?.systemInstruction.length || 0) / 4)}</span>
-                      </div>
                     </div>
                     <textarea 
                       value={activeSession?.systemInstruction || ''}
                       onChange={(e) => setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, systemInstruction: e.target.value } : s))}
-                      placeholder="Set context (use {{var}} for variables)"
-                      className="w-full h-20 bg-[#0B0C10] border border-gray-800 rounded-lg p-3 text-sm focus:border-[#66FCF1] focus:ring-1 focus:ring-[#66FCF1]/20 outline-none transition-all resize-none custom-scrollbar shadow-inner"
+                      placeholder="Expert AI instruction..."
+                      className="w-full h-16 bg-[#0B0C10] border border-gray-800 rounded-xl p-3 text-sm focus:border-[#66FCF1] focus:ring-1 focus:ring-[#66FCF1]/20 outline-none transition-all resize-none custom-scrollbar"
                     />
                   </div>
 
                   <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
                     {activeSession?.messages.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-30 select-none">
-                        <div className="w-20 h-20 rounded-3xl bg-[#1F2833] flex items-center justify-center animate-glow">
-                          <Sparkles size={40} className="text-[#66FCF1]" />
-                        </div>
-                        <div>
-                          <h3 className="text-xl font-bold text-white mb-2">Ready for Engineering</h3>
-                          <p className="text-sm max-w-sm">Enter a prompt below or use a variable template to start building. Supports text, vision, images, and video.</p>
-                        </div>
-                      </div>
+                      renderEmptyState()
                     ) : (
-                      activeSession.messages.map((m) => (
+                      activeSession?.messages.map((m) => (
                         <div key={m.id} className={`flex gap-4 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                          <div className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center font-bold text-xs shadow-lg ${m.role === 'user' ? 'bg-[#45A29E] text-white' : 'bg-[#66FCF1] text-black'}`}>
-                            {m.role === 'user' ? 'U' : 'AI'}
+                          <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center font-bold text-[10px] shadow-lg ${m.role === 'user' ? 'bg-[#45A29E] text-white' : 'bg-[#66FCF1] text-black'}`}>
+                            {m.role === 'user' ? 'ME' : 'AI'}
                           </div>
                           <div className={`max-w-[85%] space-y-2 ${m.role === 'user' ? 'text-right' : ''}`}>
-                            <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl ${m.role === 'user' ? 'bg-[#1F2833] border border-white/5' : 'bg-[#0B0C10] border border-gray-800'}`}>
+                            <div className={`p-5 rounded-2xl text-sm leading-relaxed shadow-xl ${m.role === 'user' ? 'bg-[#1F2833] border border-white/5' : 'bg-[#121212] border border-gray-800'}`}>
                               {m.parts.map((p, i) => (
                                 <div key={i}>
                                   {p.text && renderMessageContent(p.text)}
-                                  {p.inlineData && <img src={`data:${p.inlineData.mimeType};base64,${p.inlineData.data}`} className="mt-3 rounded-xl max-w-md border border-white/10 mx-auto shadow-2xl" alt="Vision input" />}
+                                  {p.inlineData && <img src={`data:${p.inlineData.mimeType};base64,${p.inlineData.data}`} className="mt-3 rounded-2xl max-w-md border border-white/10 mx-auto shadow-2xl" alt="Vision" />}
                                 </div>
                               ))}
-                              {m.videoUrl && <video src={m.videoUrl} controls className="mt-3 rounded-xl border border-white/10 w-full shadow-2xl" />}
+                              {m.videoUrl && <video src={m.videoUrl} controls className="mt-3 rounded-2xl border border-white/10 w-full shadow-2xl" />}
                             </div>
                           </div>
                         </div>
                       ))
                     )}
-                    {isGenerating && <div className="flex gap-2 items-center text-xs text-[#66FCF1] animate-pulse pl-12"><Loader2 size={14} className="animate-spin"/> Thinking...</div>}
+                    {isGenerating && <div className="flex gap-2 items-center text-xs text-[#66FCF1] animate-pulse pl-12"><Loader2 size={14} className="animate-spin"/> AI is thinking...</div>}
                   </div>
 
                   {detectedVariables.length > 0 && (
-                    <div className="px-6 py-4 bg-[#1F2833]/40 border-t border-[#45A29E]/20">
-                       <div className="flex items-center gap-2 mb-3 text-[10px] font-bold text-[#66FCF1] uppercase tracking-widest"><Braces size={12}/> Variable Inputs</div>
+                    <div className="px-6 py-4 bg-[#1F2833]/40 border-t border-[#45A29E]/20 shrink-0">
+                       <div className="flex items-center gap-2 mb-3 text-[10px] font-bold text-[#66FCF1] uppercase tracking-widest"><Braces size={12}/> Variables</div>
                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                           {detectedVariables.map(v => (
                             <div key={v} className="space-y-1">
-                              <label className="text-[10px] text-gray-500 font-mono flex items-center gap-1"><Info size={10}/> {v}</label>
+                              <label className="text-[10px] text-gray-500 font-mono truncate block">{v}</label>
                               <input 
                                 value={activeSession?.variables[v] || ''} 
                                 onChange={(e) => updateVariable(v, e.target.value)}
-                                className="w-full bg-[#0B0C10] border border-gray-700 rounded-md px-3 py-1.5 text-xs focus:border-[#66FCF1] outline-none transition-all"
-                                placeholder={`Define ${v}...`}
+                                className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg px-3 py-2 text-xs focus:border-[#66FCF1] outline-none transition-all"
+                                placeholder="..."
                               />
                             </div>
                           ))}
@@ -517,18 +565,18 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="p-4 border-t border-[#45A29E]/10 bg-[#0B0C10]">
+                  <div className="p-4 border-t border-[#45A29E]/10 bg-[#0B0C10] shrink-0">
                     <div className="max-w-4xl mx-auto flex items-end gap-2 bg-[#1F2833]/20 p-2 rounded-2xl border border-gray-800 focus-within:border-[#66FCF1]/50 transition-all shadow-inner">
-                      <div className="flex flex-col gap-1 p-1">
-                        <button onClick={() => fileInputRef.current?.click()} className="p-2.5 text-gray-500 hover:text-[#66FCF1] transition-colors"><Upload size={20}/></button>
+                      <div className="flex flex-col gap-1">
+                        <button onClick={() => fileInputRef.current?.click()} className="p-2.5 text-gray-500 hover:text-[#66FCF1] transition-colors"><Upload size={18}/></button>
                         <input type="file" ref={fileInputRef} className="hidden" multiple onChange={(e) => {
                           const files = e.target.files;
                           if (!files) return;
-                          (Array.from(files) as File[]).forEach((file: File) => {
+                          Array.from(files).forEach((file: File) => {
                             const reader = new FileReader();
                             reader.onload = (ev) => {
                               setAttachedFiles(prev => [...prev, {
-                                id: Date.now().toString() + Math.random(),
+                                id: Math.random().toString(),
                                 data: ev.target?.result as string,
                                 mimeType: file.type,
                                 name: file.name
@@ -537,39 +585,41 @@ const App: React.FC = () => {
                             reader.readAsDataURL(file);
                           });
                         }} />
-                        <button onClick={() => setIsListening(!isListening)} className={`p-2.5 rounded-lg transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-[#66FCF1]'}`}><Mic size={20}/></button>
+                        <button onClick={() => setIsListening(!isListening)} className={`p-2.5 rounded-lg transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:text-[#66FCF1]'}`}><Mic size={18}/></button>
                       </div>
                       <textarea 
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
-                        placeholder="Ask anything... Use {{variable}} to parameterize."
-                        className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-4 px-2 resize-none h-14 max-h-48 text-white custom-scrollbar outline-none"
+                        placeholder="Build something amazing..."
+                        className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-3 px-2 resize-none h-12 max-h-48 text-white custom-scrollbar outline-none"
                       />
-                      <button onClick={handleSendMessage} disabled={isGenerating} className="p-4 bg-[#66FCF1] text-[#0B0C10] rounded-xl hover:shadow-[0_0_20px_#66FCF1] disabled:opacity-50 mb-1 mr-1 transition-all">
-                        <Send size={20} />
+                      <button onClick={handleSendMessage} disabled={isGenerating} className="p-3.5 bg-[#66FCF1] text-[#0B0C10] rounded-xl hover:shadow-[0_0_20px_#66FCF1] disabled:opacity-50 transition-all shrink-0">
+                        <Send size={18} />
                       </button>
                     </div>
-                    <div className="max-w-4xl mx-auto flex gap-2 mt-2 px-2 overflow-x-auto pb-2">
-                       {attachedFiles.map(f => (
-                         <div key={f.id} className="relative group shrink-0">
-                            <div className="w-12 h-12 rounded-lg border border-gray-700 overflow-hidden shadow-lg">
-                               <img src={f.data} className="w-full h-full object-cover" alt="attachment" />
-                            </div>
-                            <button onClick={() => setAttachedFiles(p => p.filter(x => x.id !== f.id))} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-lg"><X size={10}/></button>
-                         </div>
-                       ))}
-                    </div>
+                    {attachedFiles.length > 0 && (
+                      <div className="max-w-4xl mx-auto flex gap-2 mt-3 px-2 overflow-x-auto pb-2 custom-scrollbar">
+                         {attachedFiles.map(f => (
+                           <div key={f.id} className="relative group shrink-0">
+                              <div className="w-14 h-14 rounded-xl border border-gray-700 overflow-hidden shadow-lg bg-gray-900 flex items-center justify-center">
+                                 {f.mimeType.startsWith('image/') ? <img src={f.data} className="w-full h-full object-cover" /> : <FileCode size={20} className="text-gray-500"/>}
+                              </div>
+                              <button onClick={() => setAttachedFiles(p => p.filter(x => x.id !== f.id))} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-1 shadow-lg hover:scale-110 transition-transform"><X size={10}/></button>
+                           </div>
+                         ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="w-80 border-l border-[#45A29E]/20 bg-[#1F2833]/20 p-6 flex flex-col gap-8 overflow-y-auto custom-scrollbar shrink-0 pb-24">
+                <div className="w-80 border-l border-[#45A29E]/20 bg-[#1F2833]/10 p-6 flex flex-col gap-8 overflow-y-auto custom-scrollbar shrink-0">
                    <div>
-                     <h3 className="text-xs font-bold text-white uppercase tracking-widest mb-4 flex items-center gap-2"><LayoutGrid size={14}/> Model Engine</h3>
+                     <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2"><LayoutGrid size={14}/> Engine</h3>
                      <select 
                         value={activeSession?.config.model} 
                         onChange={(e) => updateConfig('model', e.target.value)}
-                        className="w-full bg-[#0B0C10] border border-gray-700 text-sm rounded-lg p-3 focus:border-[#66FCF1] outline-none shadow-xl transition-all"
+                        className="w-full bg-[#0B0C10] border border-gray-700 text-sm rounded-xl p-3.5 focus:border-[#66FCF1] outline-none shadow-xl transition-all"
                      >
                        {MODELS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                      </select>
@@ -577,24 +627,17 @@ const App: React.FC = () => {
 
                    <div className="space-y-6">
                      <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500">
+                        <div className="flex justify-between text-[10px] uppercase font-bold text-gray-400">
                           <span>Temperature</span>
                           <span className="text-[#66FCF1]">{activeSession?.config.temperature}</span>
                         </div>
-                        <input type="range" min="0" max="1" step="0.1" value={activeSession?.config.temperature} onChange={(e) => updateConfig('temperature', parseFloat(e.target.value))} className="w-full accent-[#66FCF1] h-1.5 bg-gray-800 rounded-lg cursor-pointer" />
+                        <input type="range" min="0" max="1" step="0.1" value={activeSession?.config.temperature || 0.7} onChange={(e) => updateConfig('temperature', parseFloat(e.target.value))} className="w-full accent-[#66FCF1] h-1.5 bg-gray-800 rounded-lg cursor-pointer" />
                      </div>
-                     <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500">
-                          <span>Max Output Tokens</span>
-                          <span className="text-[#66FCF1]">{activeSession?.config.maxOutputTokens}</span>
-                        </div>
-                        <input type="number" value={activeSession?.config.maxOutputTokens} onChange={(e) => updateConfig('maxOutputTokens', parseInt(e.target.value))} className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-[#66FCF1]" />
-                     </div>
-                     <div className="flex items-center justify-between p-3 bg-[#0B0C10] border border-gray-800 rounded-lg">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Google Search</span>
+                     <div className="flex items-center justify-between p-4 bg-[#0B0C10]/60 border border-gray-800 rounded-xl">
+                        <span className="text-[10px] uppercase font-bold text-gray-500">Google Search</span>
                         <button 
                           onClick={() => updateConfig('grounding', !activeSession?.config.grounding)}
-                          className={`w-10 h-5 rounded-full relative transition-colors ${activeSession?.config.grounding ? 'bg-[#66FCF1]' : 'bg-gray-700'}`}
+                          className={`w-10 h-5 rounded-full relative transition-all ${activeSession?.config.grounding ? 'bg-[#66FCF1]' : 'bg-gray-700'}`}
                         >
                           <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${activeSession?.config.grounding ? 'right-1' : 'left-1'}`} />
                         </button>
@@ -602,11 +645,11 @@ const App: React.FC = () => {
                    </div>
 
                    <div className="border-t border-gray-800 pt-6">
-                      <h3 className="text-xs font-bold text-white uppercase tracking-widest mb-4 flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500"/> Content Safety</h3>
+                      <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2"><ShieldCheck size={14} className="text-[#66FCF1]"/> Safety</h3>
                       <div className="space-y-4">
                         {activeSession?.config.safetySettings.map((s, idx) => (
                           <div key={s.category} className="space-y-1">
-                            <label className="text-[10px] text-gray-500 uppercase font-mono">{s.category.replace(/_/g, ' ')}</label>
+                            <label className="text-[10px] text-gray-600 uppercase font-mono">{s.category.replace(/_/g, ' ')}</label>
                             <select 
                               value={s.threshold}
                               onChange={(e) => {
@@ -614,7 +657,7 @@ const App: React.FC = () => {
                                 newSettings[idx].threshold = e.target.value as any;
                                 updateConfig('safetySettings', newSettings);
                               }}
-                              className="w-full bg-[#0B0C10] border border-gray-700 text-[10px] rounded p-2 outline-none hover:border-[#66FCF1]/30 transition-all"
+                              className="w-full bg-[#0B0C10] border border-gray-700 text-[10px] rounded-lg p-2 outline-none hover:border-[#66FCF1]/30 transition-all"
                             >
                               {SAFETY_THRESHOLDS.map(t => <option key={t} value={t}>{t.replace(/BLOCK_|AND_ABOVE/g, '').replace(/_/g, ' ')}</option>)}
                             </select>
@@ -625,7 +668,7 @@ const App: React.FC = () => {
                 </div>
               </div>
             ) : activeTab === 'preview' ? (
-              <div className="flex-1 bg-white p-0 relative">
+              <div className="flex-1 bg-white p-0 relative overflow-hidden">
                  {previewCode ? (
                    <iframe 
                      srcDoc={`
@@ -635,53 +678,48 @@ const App: React.FC = () => {
                            <script src="https://cdn.tailwindcss.com"></script>
                            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
                          </head>
-                         <body class="bg-gray-50 p-4">${previewCode}</body>
+                         <body class="bg-gray-50 p-6">${previewCode}</body>
                        </html>
                      `}
                      className="w-full h-full border-none"
-                     title="AI Code Preview"
+                     title="Code Preview"
                    />
                  ) : (
                    <div className="h-full flex items-center justify-center bg-[#0B0C10] text-gray-600 flex-col gap-4">
-                     <Terminal size={48} />
-                     <p className="text-sm font-medium">No executable code detected in this session history.</p>
-                     <button onClick={() => setActiveTab('prompt')} className="px-4 py-2 border border-gray-700 rounded-lg text-xs hover:bg-white/5">Back to Editor</button>
+                     <Terminal size={48} className="opacity-20"/>
+                     <p className="text-sm font-medium tracking-tight">No code block found in conversation.</p>
+                     <button onClick={() => setActiveTab('prompt')} className="px-5 py-2 border border-gray-800 rounded-xl text-xs hover:bg-white/5 transition-all">Back to Prompt</button>
                    </div>
                  )}
                  {previewCode && (
                    <div className="absolute top-4 right-4 flex gap-2">
-                      <button onClick={() => copyToClipboard(previewCode)} className="bg-[#66FCF1] text-black px-4 py-2 rounded-lg text-xs font-bold shadow-2xl flex items-center gap-2 hover:bg-white transition-all">
-                         <Copy size={12}/> Copy Code
+                      <button onClick={() => copyToClipboard(previewCode)} className="bg-[#66FCF1] text-[#0B0C10] px-4 py-2 rounded-xl text-xs font-extrabold shadow-2xl flex items-center gap-2 hover:bg-white transition-all">
+                         <Copy size={14}/> Copy Code
                       </button>
                    </div>
                  )}
               </div>
             ) : (
-              /* Get Code Tab */
               <div className="flex-1 overflow-y-auto p-12 bg-[#0B0C10] custom-scrollbar">
-                 <div className="max-w-4xl mx-auto space-y-12 pb-24">
-                    <div className="flex items-center gap-4 border-b border-gray-800 pb-6">
-                       <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                          <FileCode size={24} className="text-emerald-400" />
+                 <div className="max-w-4xl mx-auto space-y-12">
+                    <div className="flex items-center gap-4 border-b border-gray-800 pb-8">
+                       <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-inner">
+                          <FileCode size={28} className="text-emerald-400" />
                        </div>
                        <div>
-                          <h2 className="text-2xl font-bold text-white">SDK Implementation</h2>
-                          <p className="text-sm text-gray-500">Copy these snippets to implement this prompt in your own application.</p>
+                          <h2 className="text-2xl font-black text-white tracking-tight uppercase">SDK Integration</h2>
+                          <p className="text-sm text-gray-500">Copy implementation code for your projects.</p>
                        </div>
                     </div>
 
-                    <div className="space-y-4">
-                       <h3 className="text-sm font-bold text-[#66FCF1] uppercase tracking-widest flex items-center gap-2"><ChevronRight size={14}/> Python Snippet</h3>
+                    <div className="space-y-6">
+                       <h3 className="text-xs font-bold text-[#66FCF1] uppercase tracking-widest flex items-center gap-2"><Plus size={14}/> Python Implementation</h3>
                        <CodeBlock code={generateExportCode('python')} language="python" />
-                    </div>
-
-                    <div className="space-y-4">
-                       <h3 className="text-sm font-bold text-[#66FCF1] uppercase tracking-widest flex items-center gap-2"><ChevronRight size={14}/> JavaScript Snippet</h3>
+                       
+                       <h3 className="text-xs font-bold text-[#66FCF1] uppercase tracking-widest flex items-center gap-2"><Plus size={14}/> JavaScript SDK</h3>
                        <CodeBlock code={generateExportCode('js')} language="javascript" />
-                    </div>
-
-                    <div className="space-y-4">
-                       <h3 className="text-sm font-bold text-[#66FCF1] uppercase tracking-widest flex items-center gap-2"><ChevronRight size={14}/> cURL Request</h3>
+                       
+                       <h3 className="text-xs font-bold text-[#66FCF1] uppercase tracking-widest flex items-center gap-2"><Plus size={14}/> REST API (cURL)</h3>
                        <CodeBlock code={generateExportCode('curl')} language="bash" />
                     </div>
                  </div>
@@ -693,17 +731,16 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* Persistent Navigation to Ads Hub - Fixed Right Bottom */}
+      {/* Persistent Navigation to Ads Hub */}
       <button 
         onClick={() => setShowAdsHub(!showAdsHub)}
-        className="fixed bottom-[90px] right-8 z-[10000] group flex items-center gap-3 bg-[#1F2833] border border-[#66FCF1]/30 p-3 rounded-full hover:bg-[#66FCF1] hover:text-[#0B0C10] transition-all shadow-[0_0_20px_rgba(102,252,241,0.2)]"
-        title={showAdsHub ? "Return to Studio" : "Visit Ads Hub"}
+        className="fixed bottom-[100px] right-8 z-[100] group flex items-center gap-3 bg-[#1F2833] border border-[#66FCF1]/30 p-3.5 rounded-2xl hover:bg-[#66FCF1] hover:text-[#0B0C10] transition-all shadow-2xl"
       >
-        <div className={`p-2 rounded-full ${showAdsHub ? 'bg-red-500 text-white' : 'bg-[#66FCF1] text-[#0B0C10]'}`}>
+        <div className={`p-2 rounded-xl ${showAdsHub ? 'bg-red-500 text-white' : 'bg-[#66FCF1] text-[#0B0C10]'}`}>
           {showAdsHub ? <X size={20} /> : <ExternalLink size={20} />}
         </div>
         {!showAdsHub && (
-          <span className="text-xs font-bold uppercase tracking-widest pr-4 opacity-0 group-hover:opacity-100 transition-opacity">Ads Hub</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] pr-4 opacity-0 group-hover:opacity-100 transition-all">Ads Hub</span>
         )}
       </button>
     </div>

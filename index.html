@@ -13,7 +13,14 @@
       background-color: #0B0C10;
       color: #C5C6C7;
       margin: 0;
+      padding: 0;
       overflow: hidden;
+    }
+    #root {
+      height: 100vh;
+      width: 100vw;
+      z-index: 10;
+      position: relative;
     }
     .aqua-glow {
       box-shadow: 0 0 15px rgba(102, 252, 241, 0.3);
@@ -39,45 +46,29 @@
     .animate-glow {
       animation: subtleGlow 3s infinite ease-in-out;
     }
-    pre {
-      background: #1F2833;
-      padding: 1rem;
-      border-radius: 0.5rem;
-      overflow-x: auto;
-      border: 1px solid rgba(102, 252, 241, 0.1);
-      margin: 1rem 0;
-    }
-    code {
-      font-family: 'Fira Code', 'Courier New', monospace;
-      font-size: 0.9em;
-    }
-    .image-studio-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 1.5rem;
-    }
-    /* Ad container styles */
+    /* Ad container styles - Pushed to bottom most layer */
     #ad-container-bottom {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      background: rgba(11, 12, 16, 0.95);
-      border-top: 1px solid rgba(102, 252, 241, 0.3);
-      padding: 8px;
-      z-index: 9999;
+      background: rgba(11, 12, 16, 0.98);
+      border-top: 1px solid rgba(102, 252, 241, 0.2);
+      padding: 6px;
+      z-index: 50;
       display: flex;
       justify-content: center;
-      gap: 20px;
+      gap: 15px;
       flex-wrap: nowrap;
       backdrop-filter: blur(10px);
-      max-height: 80px;
+      height: 80px;
       overflow: hidden;
     }
     .ad-unit {
       flex-shrink: 0;
       display: flex;
       align-items: center;
+      max-height: 100%;
     }
   </style>
 <script type="importmap">
@@ -97,11 +88,6 @@
 <body>
   <div id="root"></div>
   
-  <!-- Advertisement Global Scripts -->
-  <script async="async" data-cfasync="false" src="https://pl28336798.effectivegatecpm.com/d9adc379afe9e84866d1012977f35c75/invoke.js"></script>
-  <script src="https://pl28336803.effectivegatecpm.com/3e/33/db/3e33dba73328851ced9d509e5cbfac38.js"></script>
-  <script src="https://pl28336806.effectivegatecpm.com/bf/14/3e/bf143e6e3fd419572b4a2c95b924dd3f.js"></script>
-
   <!-- Sticky Advertisement Bar -->
   <div id="ad-container-bottom">
     <div id="container-d9adc379afe9e84866d1012977f35c75"></div>
@@ -133,52 +119,10 @@
     </div>
   </div>
 
-  <!-- Background Ad Units -->
-  <div style="display:none">
-    <script type="text/javascript">
-      atOptions = {
-        'key' : '8623e6419adf6e5bfa3fd0dfcd5d6824',
-        'format' : 'iframe',
-        'height' : 300,
-        'width' : 160,
-        'params' : {}
-      };
-    </script>
-    <script type="text/javascript" src="https://www.highperformanceformat.com/8623e6419adf6e5bfa3fd0dfcd5d6824/invoke.js"></script>
-
-    <script type="text/javascript">
-      atOptions = {
-        'key' : 'd3a9273ab8a3a173e913d563e27511f6',
-        'format' : 'iframe',
-        'height' : 250,
-        'width' : 300,
-        'params' : {}
-      };
-    </script>
-    <script type="text/javascript" src="https://www.highperformanceformat.com/d3a9273ab8a3a173e913d563e27511f6/invoke.js"></script>
-
-    <script type="text/javascript">
-      atOptions = {
-        'key' : '9425000b9be45875051c1a55e38f1444',
-        'format' : 'iframe',
-        'height' : 600,
-        'width' : 160,
-        'params' : {}
-      };
-    </script>
-    <script type="text/javascript" src="https://www.highperformanceformat.com/9425000b9be45875051c1a55e38f1444/invoke.js"></script>
-
-    <script type="text/javascript">
-      atOptions = {
-        'key' : '787c157f9ba5025780bd9bccc1840818',
-        'format' : 'iframe',
-        'height' : 90,
-        'width' : 728,
-        'params' : {}
-      };
-    </script>
-    <script type="text/javascript" src="https://www.highperformanceformat.com/787c157f9ba5025780bd9bccc1840818/invoke.js"></script>
-  </div>
+  <!-- Background/Global Ad Scripts moved here to not block rendering -->
+  <script async="async" data-cfasync="false" src="https://pl28336798.effectivegatecpm.com/d9adc379afe9e84866d1012977f35c75/invoke.js"></script>
+  <script src="https://pl28336803.effectivegatecpm.com/3e/33/db/3e33dba73328851ced9d509e5cbfac38.js"></script>
+  <script src="https://pl28336806.effectivegatecpm.com/bf/14/3e/bf143e6e3fd419572b4a2c95b924dd3f.js"></script>
 
   <script type="module" src="index.tsx"></script>
 </body>
